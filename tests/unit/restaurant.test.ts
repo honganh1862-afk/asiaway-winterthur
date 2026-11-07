@@ -40,3 +40,10 @@ describe('which restaurant a deployment serves', () => {
     expect(RESTAURANT_PROFILES.oerlikon.reviewUrl).toBe('https://maps.app.goo.gl/nFY8toA4d164p12q7');
   });
 });
+
+describe('the toilet notice', () => {
+  it('tells Winterthur guests the floor and the code, and Oerlikon guests nothing', () => {
+    expect(RESTAURANT_PROFILES.winterthur.toilet).toEqual({ floor: '−1', code: 'E2020' });
+    expect(RESTAURANT_PROFILES.oerlikon.toilet).toBeNull();
+  });
+});

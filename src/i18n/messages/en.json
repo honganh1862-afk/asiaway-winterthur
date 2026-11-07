@@ -164,5 +164,6 @@
   "menus.BOTH": "Vietnamese & Thai",
   "staff.board.clearAll": "Clear all tables (end of day)",
   "staff.board.clearAll.confirm": "Clear all {count} tables with a list? Do this only when every table has paid.",
-  "staff.board.clearAll.done": "Cleared: {tables}"
+  "staff.board.clearAll.done": "Cleared: {tables}",
+  "toilet.notice": "Toilets: take the lift to floor {floor} · code {code}"
 }
