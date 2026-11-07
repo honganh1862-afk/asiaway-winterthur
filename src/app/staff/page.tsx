@@ -54,7 +54,12 @@ function Board() {
   const active = tables.filter((x) => x.isActive);
   const waiting = active
     .filter((x) => x.cart)
-    .sort((a, b) => b.cart!.updatedAt.localeCompare(a.cart!.updatedAt));
+    // Tables waiting for confirmation first, then the most recent change.
+    .sort(
+      (a, b) =>
+        Number(b.cart!.pending > 0) - Number(a.cart!.pending > 0) ||
+        b.cart!.updatedAt.localeCompare(a.cart!.updatedAt),
+    );
 
   return (
     <>
@@ -84,15 +89,20 @@ function Board() {
                       </span>
                       <span className="block text-sm text-ink-muted">
                         {ago === 0 ? t('staff.ago.now') : t('staff.ago.minutes', { n: ago })}
-                        {table.cart!.allAtOnce ? (
+                        {table.cart!.allAtOnce && (
                           <span className="ml-2 font-semibold text-brand-700">· {t('cart.serve.allAtOnce')}</span>
-                        ) : table.cart!.secondCourse > 0 ? (
-                          <span className="ml-2 font-semibold text-brand-700">
-                            · {t('staff.board.second', { count: table.cart!.secondCourse })}
-                          </span>
-                        ) : null}
+                        )}
                       </span>
                     </span>
+                    {table.cart!.pending > 0 ? (
+                      <span className="shrink-0 rounded-xl bg-brand-600 px-2 py-1 text-center text-xs font-bold text-white">
+                        {t('staff.board.toConfirm', { count: table.cart!.pending })}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 rounded-xl bg-ok-50 px-2 py-1 text-xs font-bold text-ok-500">
+                        ✓ {t('staff.board.confirmed')}
+                      </span>
+                    )}
                     <span aria-hidden="true" className="text-2xl text-ink-muted">
                       ›
                     </span>

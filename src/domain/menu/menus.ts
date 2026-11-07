@@ -80,3 +80,18 @@ export function categoriesOnTab<C extends { slug: string; kind: 'FOOD' | 'DRINK'
 ): C[] {
   return categories.filter((c) => menuTabFor(c) === tab);
 }
+
+/**
+ * The courses a dish is served in: 1 starter, 2 main course, 3 dessert. Drinks
+ * have none (they are served at once) and are stored as 1.
+ */
+export type Course = 1 | 2 | 3;
+export const COURSES: readonly Course[] = [1, 2, 3];
+
+const STARTER_SLUGS: ReadonlySet<string> = new Set(['appetizer', 'thai-appetizer', 'thai-salad']);
+
+/** The course a dish starts in when a guest adds it; they can change it in the cart. */
+export function defaultCourse(category: { slug: string; kind: 'FOOD' | 'DRINK' }): Course {
+  if (category.kind === 'DRINK' || STARTER_SLUGS.has(category.slug)) return 1;
+  return DESSERT_SLUGS.has(category.slug) ? 3 : 2;
+}

@@ -60,18 +60,23 @@ screen. Tap your name and type the PIN; the sign-in lasts 12 hours.
 - Tap a table to see its list, by dish number. Change a quantity with − and +,
   or remove a line. For a guest ordering from the printed menu, open their table
   (under **All tables**) and add the dish by number or name.
-- Each table is served **in courses** (1. Gang, 2. Gang) or **all at once**: the
-  guests choose at the top of their cart, and you can change it on the table's
-  page. In courses, dishes start in the 1. Gang and move with one tap; drinks
-  have no course. The board shows "2nd course: n" or "All at once" per table.
+- Guests choose for each dish: **1 Starter**, **2 Main course** or **3 Dessert**
+  (each dish starts in its own; drinks have none), or the table chooses **all
+  at once**. They can type a **special request** on a dish and one for the
+  whole table; you can type them too, for a guest ordering from the printed
+  menu. The board shows **To confirm: n** for a table with something new.
+- At the table, check the list with the guests, change what is needed, and
+  tap **Confirm order** (green): it is confirmed and goes to the kitchen.
+  From then on the guests can add dishes (which wait for you again) but only
+  you can change or remove a confirmed one.
 - **Which menu a table gets** (Winterthur) follows the day: Monday, Friday and
   Saturday Vietnamese only; Tuesday to Thursday 1xx Vietnamese, 2xx both, 3xx
   Thai; Sunday Thai only (`menuSchedule` in `src/config/restaurant.ts`). On a
   table's page, **Menu for this table** sets it to Vietnamese, Thai or both for
   those guests; only staff can, and clearing the table returns it to the plan.
-- Take the order into the till as before: nothing here reaches the kitchen.
-  Send the 1. Gang and drinks now and hold the 2. Gang; release it once the
-  1. Gang is cleared (SOP-01).
+- Then enter the confirmed order in the POS, as before: this screen has no link
+  to the kitchen. Starters and drinks go now; release the main course, then
+  the dessert, as each course before it is cleared (SOP-01).
 - When the table has paid, tap **Paid — clear table**. The list empties on the
   guests' phones too, ready for the next guests.
 - **End of the day:** once every table has paid, **Clear all tables (end of

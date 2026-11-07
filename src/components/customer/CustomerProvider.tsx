@@ -32,7 +32,7 @@ import { restaurantWeekday } from '../../domain/menu/saturday';
  * Either way, nothing reaches the kitchen: the waiter takes the order at the
  * table and keys it into the POS.
  */
-export type Course = 1 | 2;
+export type Course = 1 | 2 | 3;
 
 export interface CartLine {
   readonly menuItemId: string;
@@ -40,10 +40,14 @@ export interface CartLine {
   readonly dishNumber: string | null;
   readonly unitPriceCents: number;
   readonly quantity: number;
-  /** 1. Gang or 2. Gang; a cart on this phone only, and drinks, are always 1. */
+  /** 1 starter, 2 main course, 3 dessert; a cart on this phone only, and drinks, are 1. */
   readonly course?: Course;
   /** Known for a table's shared cart, which shows drinks apart. */
   readonly kind?: 'FOOD' | 'DRINK';
+  /** How many the staff have confirmed (sent to the kitchen); a shared cart only. */
+  readonly confirmedQuantity?: number;
+  /** A special request for this dish. */
+  readonly note?: string | null;
 }
 
 const courseOf = (line: { course?: Course }): Course => line.course ?? 1;
@@ -61,6 +65,12 @@ interface CustomerState {
   /** The table wants everything at once rather than in courses. */
   allAtOnce: boolean;
   setAllAtOnce: (allAtOnce: boolean) => void;
+  /** A special request for one dish, or for the whole table (shared cart only). */
+  setLineNote: (menuItemId: string, course: Course, note: string) => void;
+  tableNote: string | null;
+  setTableNote: (note: string) => void;
+  /** Items waiting for the staff to confirm them. */
+  pending: number;
   clearCart: () => void;
   /** How many of one dish are in the cart, for the badge on its add button. */
   quantityOf: (menuItemId: string) => number;
@@ -85,6 +95,8 @@ const SHARED_CART_POLL_MS = 4000;
 interface ServerCart {
   allAtOnce: boolean;
   menus: FoodMenus;
+  note: string | null;
+  pending: number;
   lines: {
     menuItemId: string;
     name: string;
@@ -93,6 +105,8 @@ interface ServerCart {
     quantity: number;
     course: Course;
     kind: 'FOOD' | 'DRINK';
+    confirmedQuantity: number;
+    note: string | null;
   }[];
 }
 
@@ -105,6 +119,8 @@ function fromServer(cart: ServerCart): CartLine[] {
     quantity: l.quantity,
     course: l.course,
     kind: l.kind,
+    confirmedQuantity: l.confirmedQuantity,
+    note: l.note,
   }));
 }
 
@@ -112,7 +128,9 @@ type CartChange =
   | { menuItemId: string; delta: number; course?: Course }
   | { menuItemId: string; quantity: number; course?: Course }
   | { menuItemId: string; from: Course; to: Course }
-  | { allAtOnce: boolean };
+  | { menuItemId: string; course: Course; note: string }
+  | { allAtOnce: boolean }
+  | { tableNote: string };
 
 function read<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -150,6 +168,8 @@ export function CustomerProvider({
   // From the schedule at once, so the tabs are right before the server answers;
   // the server's answer (which knows what the staff set) then takes over.
   const [foodMenus, setFoodMenus] = useState<FoodMenus>('BOTH');
+  const [tableNote, setTableNoteState] = useState<string | null>(null);
+  const [pending, setPending] = useState(0);
 
   useEffect(() => {
     const storedLocale = read<string>(LOCALE_KEY, DEFAULT_LOCALE);
@@ -188,6 +208,12 @@ export function CustomerProvider({
   // time it lands, and is dropped; so is any read while a change is in flight.
   const changes = useRef(0);
   const inFlight = useRef(0);
+  const apply = (data: ServerCart) => {
+    setCart(fromServer(data));
+    setAllAtOnceState(data.allAtOnce);
+    setTableNoteState(data.note);
+    setPending(data.pending);
+  };
 
   const refresh = useCallback(async () => {
     if (!sharedTable) return;
@@ -205,10 +231,7 @@ export function CustomerProvider({
       if (!response.ok) return;
       const data = (await response.json()) as ServerCart;
       setFoodMenus(data.menus);
-      if (seen === changes.current && inFlight.current === 0) {
-        setCart(fromServer(data));
-        setAllAtOnceState(data.allAtOnce);
-      }
+      if (seen === changes.current && inFlight.current === 0) apply(data);
     } catch {
       // Offline for a moment: keep showing the last list.
     }
@@ -231,8 +254,7 @@ export function CustomerProvider({
         inFlight.current -= 1;
         if (response.ok && inFlight.current === 0) {
           const data = (await response.json()) as ServerCart;
-          setCart(fromServer(data));
-          setAllAtOnceState(data.allAtOnce);
+          apply(data);
           setFoodMenus(data.menus);
         } else if (!response.ok) await refresh();
       } catch {
@@ -285,19 +307,22 @@ export function CustomerProvider({
     document.documentElement.lang = next;
   }, []);
 
-  // A dish added from the menu goes into the 1st course.
+  // A dish added from the menu starts in its own course (a starter as a
+  // starter, a dessert as a dessert): the server decides, and the cart shows
+  // it as soon as the server answers.
   const addToCart = useCallback(
     (line: Omit<CartLine, 'quantity'>, quantity = 1) => {
       setCart((current) => {
-        const same = (l: CartLine) => l.menuItemId === line.menuItemId && courseOf(l) === 1;
-        if (current.some(same)) {
-          return current.map((l) => (same(l) ? { ...l, quantity: Math.min(99, l.quantity + quantity) } : l));
+        const same = (l: CartLine) => l.menuItemId === line.menuItemId && (!sharedTable || !l.confirmedQuantity);
+        const existing = current.find(same);
+        if (existing) {
+          return current.map((l) => (l === existing ? { ...l, quantity: Math.min(99, l.quantity + quantity) } : l));
         }
-        return [...current, { ...line, course: 1, quantity: Math.min(99, quantity) }];
+        return [...current, { ...line, quantity: Math.min(99, quantity) }];
       });
       void send({ menuItemId: line.menuItemId, delta: quantity });
     },
-    [send],
+    [send, sharedTable],
   );
 
   const setQuantity = useCallback(
@@ -338,6 +363,26 @@ export function CustomerProvider({
     [send, sharedTable],
   );
 
+  const setLineNote = useCallback(
+    (menuItemId: string, course: Course, note: string) => {
+      if (!sharedTable) return;
+      setCart((current) =>
+        current.map((l) => (l.menuItemId === menuItemId && courseOf(l) === course ? { ...l, note } : l)),
+      );
+      void send({ menuItemId, course, note });
+    },
+    [send, sharedTable],
+  );
+
+  const setTableNote = useCallback(
+    (note: string) => {
+      if (!sharedTable) return;
+      setTableNoteState(note);
+      void send({ tableNote: note });
+    },
+    [send, sharedTable],
+  );
+
   const setAllAtOnce = useCallback(
     (value: boolean) => {
       if (!sharedTable) return;
@@ -371,6 +416,10 @@ export function CustomerProvider({
       moveToCourse,
       allAtOnce,
       setAllAtOnce,
+      setLineNote,
+      tableNote,
+      setTableNote,
+      pending,
       clearCart,
       quantityOf,
       cartCount: cart.reduce((n, l) => n + l.quantity, 0),
@@ -388,6 +437,10 @@ export function CustomerProvider({
       moveToCourse,
       allAtOnce,
       setAllAtOnce,
+      setLineNote,
+      tableNote,
+      setTableNote,
+      pending,
       clearCart,
       quantityOf,
       sharedTable,

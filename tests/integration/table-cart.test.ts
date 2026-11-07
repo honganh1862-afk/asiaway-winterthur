@@ -6,6 +6,8 @@ import { menuItems, tableCarts } from '../../src/server/db/schema';
 import { applyShippedMenu, loadShippedMenu } from '../../src/server/menu/sync-menu';
 import { RESTAURANT_PROFILES } from '../../src/config/restaurant';
 import {
+  confirmOrder,
+  setTableNote,
   clearAllTables,
   setTableMenus,
   addMissingTables,
@@ -143,14 +145,6 @@ describe('1. Gang and 2. Gang', () => {
     expect(drink).toMatchObject({ course: 1, kind: 'DRINK', quantity: 1 });
   });
 
-  it('tells the staff how much is held for the second course', async () => {
-    expect((await listTables(db)).find((t) => t.tableNumber === '230')!.cart).toMatchObject({
-      count: 2,
-      secondCourse: 1,
-      allAtOnce: false,
-    });
-  });
-
   it('lets a table ask for everything at once, and back, keeping each dish\'s course', async () => {
     await setAllAtOnce(db, '230', true);
     expect((await getTableCart(db, '230', 'en')).allAtOnce).toBe(true);
@@ -273,5 +267,81 @@ describe('end of the day', () => {
     expect(closed.filter((c) => c.clearedBy === 'Edmond').length).toBeGreaterThanOrEqual(2);
 
     expect(await clearAllTables(db, 'Edmond')).toEqual([]);
+  });
+});
+
+describe('courses, confirmation and special requests', () => {
+  let dessert: string;
+  beforeAll(async () => {
+    dessert = (await db.select().from(menuItems)).find((i) => i.dishNumber === '130')!.id;
+    await createTable(db, { tableNumber: '240' });
+  });
+
+  it('starts a starter as a starter, a main dish as a main course, a dessert as a dessert', async () => {
+    await changeCartLine(db, '240', { menuItemId: springRolls, delta: 1 }, 'guest');
+    await changeCartLine(db, '240', { menuItemId: pho, delta: 1 }, 'guest');
+    await changeCartLine(db, '240', { menuItemId: dessert, delta: 2 }, 'guest');
+    await changeCartLine(db, '240', { menuItemId: cola, delta: 1 }, 'guest');
+    const lines = (await getTableCart(db, '240', 'en')).lines;
+    const courseOf = (id: string) => lines.find((l) => l.menuItemId === id)!.course;
+    expect([courseOf(springRolls), courseOf(pho), courseOf(dessert), courseOf(cola)]).toEqual([1, 2, 3, 1]);
+  });
+
+  it('lets a guest move a dish to another course and add a request to it', async () => {
+    await changeCartLine(db, '240', { menuItemId: pho, from: 2, to: 1 }, 'guest');
+    await changeCartLine(db, '240', { menuItemId: pho, course: 1, note: '  no   coriander  ' }, 'guest');
+    await setTableNote(db, '240', 'One guest is allergic to peanuts');
+    const cart = await getTableCart(db, '240', 'en');
+    expect(cart.lines.find((l) => l.menuItemId === pho)).toMatchObject({ course: 1, note: 'no coriander' });
+    expect(cart.note).toBe('One guest is allergic to peanuts');
+    // 5 items and the table's request wait for the staff.
+    expect(cart.pending).toBe(6);
+    expect((await listTables(db)).find((t) => t.tableNumber === '240')!.cart).toMatchObject({
+      pending: 6,
+      confirmed: false,
+    });
+  });
+
+  it('confirms the order: nothing waits, and who confirmed it is kept', async () => {
+    expect(await confirmOrder(db, '240', 'Hong Anh')).toBe(5);
+    const cart = await getTableCart(db, '240', 'en');
+    expect(cart).toMatchObject({ pending: 0, confirmedBy: 'Hong Anh' });
+    expect(cart.lines.every((l) => l.confirmedQuantity === l.quantity)).toBe(true);
+  });
+
+  it('stops a guest changing what is confirmed, but lets them add more, which waits again', async () => {
+    await changeCartLine(db, '240', { menuItemId: dessert, delta: -2 }, 'guest');
+    await changeCartLine(db, '240', { menuItemId: dessert, quantity: 0, course: 3 }, 'guest');
+    expect((await getTableCart(db, '240', 'en')).lines.find((l) => l.menuItemId === dessert)!.quantity).toBe(2);
+    await expect(
+      changeCartLine(db, '240', { menuItemId: pho, from: 1, to: 2 }, 'guest'),
+    ).rejects.toMatchObject({ code: 'LINE_CONFIRMED' });
+    await expect(
+      changeCartLine(db, '240', { menuItemId: pho, course: 1, note: 'extra spicy' }, 'guest'),
+    ).rejects.toMatchObject({ code: 'LINE_CONFIRMED' });
+
+    await changeCartLine(db, '240', { menuItemId: dessert, delta: 1 }, 'guest');
+    const cart = await getTableCart(db, '240', 'en');
+    expect(cart.lines.find((l) => l.menuItemId === dessert)).toMatchObject({ quantity: 3, confirmedQuantity: 2 });
+    expect(cart.pending).toBe(1);
+    // The guest can take back what is not yet confirmed.
+    await changeCartLine(db, '240', { menuItemId: dessert, delta: -1, course: 3 }, 'guest');
+    expect((await getTableCart(db, '240', 'en')).pending).toBe(0);
+  });
+
+  it('lets the staff change anything, confirmed or not', async () => {
+    await changeCartLine(db, '240', { menuItemId: pho, course: 1, note: 'extra spicy' }, { staff: 'Belle' });
+    await changeCartLine(db, '240', { menuItemId: pho, from: 1, to: 2 }, { staff: 'Belle' });
+    await changeCartLine(db, '240', { menuItemId: dessert, quantity: 1, course: 3 }, { staff: 'Belle' });
+    const lines = (await getTableCart(db, '240', 'en')).lines;
+    expect(lines.find((l) => l.menuItemId === pho)).toMatchObject({ course: 2, note: 'extra spicy', confirmedQuantity: 1 });
+    expect(lines.find((l) => l.menuItemId === dessert)).toMatchObject({ quantity: 1, confirmedQuantity: 1 });
+  });
+
+  it('counts a new table request as waiting until it is confirmed', async () => {
+    await setTableNote(db, '240', 'Birthday: candle on the dessert');
+    expect((await getTableCart(db, '240', 'en')).pending).toBe(1);
+    await confirmOrder(db, '240', 'Belle');
+    expect((await getTableCart(db, '240', 'en')).pending).toBe(0);
   });
 });

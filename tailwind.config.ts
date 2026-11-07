@@ -26,6 +26,8 @@ export default {
         /* Errors sit apart from the brand red: deeper, browner, never filled. */
         danger: { 500: '#8c1c13', 50: '#fbeeec' },
         warn: { 500: '#8a5a00', 50: '#fdf4e3' },
+        /* Confirmed by the staff, on its way to the kitchen (6.5:1 on white). */
+        ok: { 500: '#1f6b3a', 50: '#eaf5ee' },
         /* The classic menu is the printed one: chalk on a blackboard. Its red is
            lighter than the brand red, which is too dark to read on black
            (#ef5a5f is 5:1 on the board). */
