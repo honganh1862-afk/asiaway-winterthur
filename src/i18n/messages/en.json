@@ -155,5 +155,14 @@
   "course.toSecond": "Later: 2nd course",
   "course.toFirst": "Sooner: 1st course",
   "staff.board.second": "2nd course: {count}",
-  "staff.table.addTo": "Add to"
+  "staff.table.addTo": "Add to",
+  "staff.table.menu": "Menu for this table",
+  "staff.table.menu.schedule": "As scheduled: {menu}",
+  "staff.table.menu.hint": "Only staff can change this. It goes back to the schedule when the table is cleared.",
+  "menus.VIETNAMESE": "Vietnamese",
+  "menus.THAI": "Thai",
+  "menus.BOTH": "Vietnamese & Thai",
+  "staff.board.clearAll": "Clear all tables (end of day)",
+  "staff.board.clearAll.confirm": "Clear all {count} tables with a list? Do this only when every table has paid.",
+  "staff.board.clearAll.done": "Cleared: {tables}"
 }

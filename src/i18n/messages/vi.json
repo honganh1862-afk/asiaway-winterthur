@@ -155,5 +155,14 @@
   "course.toSecond": "Để sau: đợt 2",
   "course.toFirst": "Lên trước: đợt 1",
   "staff.board.second": "Đợt 2: {count}",
-  "staff.table.addTo": "Thêm vào"
+  "staff.table.addTo": "Thêm vào",
+  "staff.table.menu": "Thực đơn cho bàn này",
+  "staff.table.menu.schedule": "Theo lịch: {menu}",
+  "staff.table.menu.hint": "Chỉ nhân viên mới đổi được. Khi dọn bàn, thực đơn trở lại theo lịch.",
+  "menus.VIETNAMESE": "Việt Nam",
+  "menus.THAI": "Thái",
+  "menus.BOTH": "Việt & Thái",
+  "staff.board.clearAll": "Dọn tất cả các bàn (cuối ngày)",
+  "staff.board.clearAll.confirm": "Dọn tất cả {count} bàn đang có danh sách? Chỉ làm khi tất cả các bàn đã thanh toán.",
+  "staff.board.clearAll.done": "Đã dọn: {tables}"
 }

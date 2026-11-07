@@ -39,6 +39,7 @@ export default function StaffHomePage() {
 function Board() {
   const { t } = useCustomer();
   const [tables, setTables] = useState<TableOverview[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [, setTick] = useState(0);
 
   const load = useCallback(async () => {
@@ -126,6 +127,30 @@ function Board() {
       <Link href="/staff/tables" className="btn-secondary w-full">
         {t('staff.board.manage')}
       </Link>
+
+      {/* End of the day: every table at once, instead of one by one. */}
+      {waiting.length > 0 && (
+        <button
+          type="button"
+          className="min-h-tap w-full rounded-xl border-2 border-danger-500 px-4 py-3 font-semibold text-danger-500"
+          onClick={async () => {
+            if (!window.confirm(t('staff.board.clearAll.confirm', { count: waiting.length }))) return;
+            const result = await staffFetch<{ cleared: string[]; tables: TableOverview[] }>(
+              '/api/staff/tables/clear-all',
+              { method: 'POST' },
+            );
+            setTables(result.tables);
+            setNotice(t('staff.board.clearAll.done', { tables: result.cleared.join(', ') || '–' }));
+          }}
+        >
+          {t('staff.board.clearAll')}
+        </button>
+      )}
+      {notice && (
+        <p role="status" className="text-center text-sm font-semibold text-ink-muted">
+          {notice}
+        </p>
+      )}
     </>
   );
 }

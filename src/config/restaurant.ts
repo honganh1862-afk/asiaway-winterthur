@@ -10,6 +10,8 @@
  * guest's browser needs it as much as the server does. Changing it means a
  * rebuild, not just a restart.
  */
+import type { MenuSchedule } from '../domain/menu/menus';
+
 export const RESTAURANT_LOCATIONS = ['oerlikon', 'winterthur'] as const;
 export type RestaurantLocation = (typeof RESTAURANT_LOCATIONS)[number];
 
@@ -32,10 +34,11 @@ export interface RestaurantProfile {
    */
   readonly thaiMenu: boolean;
   /**
-   * Whether the table number picks the food menu: 1xx Vietnamese, 2xx both,
-   * 3xx Thai (domain/menu/menus.ts). Winterthur seats its guests this way.
+   * Which food menus each table gets on each weekday, by the first digit of its
+   * number (domain/menu/menus.ts). The staff can set a table otherwise for its
+   * guests. Null: every table gets every menu served (Oerlikon: Vietnamese).
    */
-  readonly menuByTable: boolean;
+  readonly menuSchedule: MenuSchedule | null;
   /** The dessert card, n° 130–137. Served in both restaurants. */
   readonly dessertMenu: boolean;
   /**
@@ -64,7 +67,7 @@ export const RESTAURANT_PROFILES: Readonly<Record<RestaurantLocation, Restaurant
     payment: 'counter',
     counterPlace: null,
     thaiMenu: false,
-    menuByTable: false,
+    menuSchedule: null,
     dessertMenu: true,
     wineAndTea: true,
     // "Asiaway" in Zürich-Oerlikon on Google Maps.
@@ -76,12 +79,18 @@ export const RESTAURANT_PROFILES: Readonly<Record<RestaurantLocation, Restaurant
     payment: 'counter',
     counterPlace: 'stairs',
     thaiMenu: true,
-    menuByTable: true,
+    // Monday first. Monday, Friday and Saturday: Vietnamese only. Tuesday to
+    // Thursday: 1xx Vietnamese, 2xx both, 3xx Thai. Sunday: Thai only.
+    menuSchedule: {
+      '1': ['VIETNAMESE', 'VIETNAMESE', 'VIETNAMESE', 'VIETNAMESE', 'VIETNAMESE', 'VIETNAMESE', 'THAI'],
+      '2': ['VIETNAMESE', 'BOTH', 'BOTH', 'BOTH', 'VIETNAMESE', 'VIETNAMESE', 'THAI'],
+      '3': ['VIETNAMESE', 'THAI', 'THAI', 'THAI', 'VIETNAMESE', 'VIETNAMESE', 'THAI'],
+    },
     dessertMenu: true,
     wineAndTea: true,
     // "Asiaway Restaurant Winterthur" on Google Maps.
     reviewUrl: 'https://maps.app.goo.gl/2zNqQCJNHLKMi4WA8',
-    staff: ['Edmond', 'Viet', 'Xuan', 'Tami', 'Yen', 'April', 'Mersi', 'Trung'],
+    staff: ['Edmond', 'Viet', 'Xuan', 'Tami', 'Yen', 'April', 'Mersi', 'Trung', 'Belle', 'Hong Anh'],
   },
 };
 

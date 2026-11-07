@@ -2,6 +2,9 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { domainError } from '../../domain/errors';
 import { generateQrToken } from '../../domain/session/qr-token';
 import { isTableNumber } from '../../domain/table';
+import { FOOD_MENUS, scheduledMenus, type FoodMenus, type MenuSchedule } from '../../domain/menu/menus';
+import { restaurantWeekday } from '../../domain/menu/saturday';
+import { RESTAURANT } from '../../config/restaurant';
 import type { Locale } from '../../i18n/locales';
 import type { AppDatabase as Db } from '../db/client';
 import { menuCategories, menuItems, restaurantTables, tableCartLines, tableCarts } from '../db/schema';
@@ -56,6 +59,27 @@ export interface TableCart {
   readonly updatedAt: string | null;
   /** Everything served at once: no second course held back. */
   readonly allAtOnce: boolean;
+  /** The food menus this table's guests see now: staff's choice, else the schedule. */
+  readonly menus: FoodMenus;
+  /** What the day's schedule gives this table, whatever staff chose. */
+  readonly scheduledMenus: FoodMenus;
+  /** The menus staff set for this table, or null for the schedule. */
+  readonly menuOverride: FoodMenus | null;
+}
+
+function isFoodMenus(value: unknown): value is FoodMenus {
+  return typeof value === 'string' && (FOOD_MENUS as readonly string[]).includes(value);
+}
+
+/** Staff's choice for the table, else what the schedule gives it today. */
+function menusOf(
+  table: { tableNumber: string; menuOverride: string | null },
+  now: Date,
+  schedule: MenuSchedule | null,
+) {
+  const scheduled = scheduledMenus(table.tableNumber, schedule, restaurantWeekday(now));
+  const override = isFoodMenus(table.menuOverride) ? table.menuOverride : null;
+  return { menus: override ?? scheduled, scheduledMenus: scheduled, menuOverride: override };
 }
 
 export const MAX_QUANTITY = 99;
@@ -86,13 +110,20 @@ async function openCartId(db: Db, tableId: string): Promise<string | null> {
   return cart?.id ?? null;
 }
 
-export async function getTableCart(db: Db, tableNumber: string, locale: Locale): Promise<TableCart> {
+export async function getTableCart(
+  db: Db,
+  tableNumber: string,
+  locale: Locale,
+  /** For tests: the moment, and the restaurant's schedule. */
+  options: { now?: Date; schedule?: MenuSchedule | null } = {},
+): Promise<TableCart> {
   const table = await activeTable(db, tableNumber);
+  const menus = menusOf(table, options.now ?? new Date(), options.schedule ?? RESTAURANT.menuSchedule);
   const [cart] = await db
     .select()
     .from(tableCarts)
     .where(and(eq(tableCarts.tableId, table.id), isNull(tableCarts.clearedAt)));
-  if (!cart) return { tableNumber, lines: [], count: 0, totalCents: 0, updatedAt: null, allAtOnce: false };
+  if (!cart) return { tableNumber, lines: [], count: 0, totalCents: 0, updatedAt: null, allAtOnce: false, ...menus };
 
   const rows = await db
     .select({ line: tableCartLines, item: menuItems, kind: menuCategories.kind })
@@ -125,6 +156,7 @@ export async function getTableCart(db: Db, tableNumber: string, locale: Locale):
     totalCents: lines.reduce((n, l) => n + l.quantity * l.unitPriceCents, 0),
     updatedAt: cart.updatedAt.toISOString(),
     allAtOnce: cart.allAtOnce,
+    ...menus,
   };
 }
 
@@ -218,6 +250,15 @@ export async function changeCartLine(db: Db, tableNumber: string, change: CartCh
   });
 }
 
+/**
+ * Staff set the menus for a table's guests (Vietnamese, Thai or both), or null
+ * to go back to the day's schedule. Lasts until the table is cleared.
+ */
+export async function setTableMenus(db: Db, tableNumber: string, menus: FoodMenus | null): Promise<void> {
+  const table = await activeTable(db, tableNumber);
+  await db.update(restaurantTables).set({ menuOverride: menus }).where(eq(restaurantTables.id, table.id));
+}
+
 /** Everything at once, or courses: the table's choice, kept on its open cart. */
 export async function setAllAtOnce(db: Db, tableNumber: string, allAtOnce: boolean): Promise<void> {
   const table = await activeTable(db, tableNumber);
@@ -242,7 +283,36 @@ export async function clearTable(db: Db, tableNumber: string, staffName: string)
     .set({ clearedAt: new Date(), clearedBy: staffName })
     .where(and(eq(tableCarts.tableId, table.id), isNull(tableCarts.clearedAt)))
     .returning({ id: tableCarts.id });
+  // The next guests get the day's schedule again.
+  if (table.menuOverride !== null) {
+    await db.update(restaurantTables).set({ menuOverride: null }).where(eq(restaurantTables.id, table.id));
+  }
   return cleared.length > 0;
+}
+
+/**
+ * End of the day: clears every table at once, exactly as clearing each one
+ * would (who and when are kept, staff menu choices go back to the schedule).
+ * Returns the tables that had an open cart.
+ */
+export async function clearAllTables(db: Db, staffName: string): Promise<string[]> {
+  return db.transaction(async (tx: Db) => {
+    const cleared = await tx
+      .update(tableCarts)
+      .set({ clearedAt: new Date(), clearedBy: staffName })
+      .where(isNull(tableCarts.clearedAt))
+      .returning({ tableId: tableCarts.tableId });
+    await tx
+      .update(restaurantTables)
+      .set({ menuOverride: null })
+      .where(sql`${restaurantTables.menuOverride} is not null`);
+    if (cleared.length === 0) return [];
+    const ids = new Set(cleared.map((c) => c.tableId));
+    return (await tx.select().from(restaurantTables))
+      .filter((t) => ids.has(t.id))
+      .map((t) => t.tableNumber)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  });
 }
 
 export interface TableOverview {

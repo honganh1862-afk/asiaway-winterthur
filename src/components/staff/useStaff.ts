@@ -77,6 +77,9 @@ export interface TableCart {
   totalCents: number;
   updatedAt: string | null;
   allAtOnce: boolean;
+  menus: 'VIETNAMESE' | 'THAI' | 'BOTH';
+  scheduledMenus: 'VIETNAMESE' | 'THAI' | 'BOTH';
+  menuOverride: 'VIETNAMESE' | 'THAI' | 'BOTH' | null;
   lines: {
     menuItemId: string;
     dishNumber: string | null;

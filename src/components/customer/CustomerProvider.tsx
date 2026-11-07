@@ -12,8 +12,10 @@ import {
 } from 'react';
 import { DEFAULT_LOCALE, type Locale, isLocale } from '../../i18n/locales';
 import { createTranslator, type Translator } from '../../i18n';
-import { hasStaffScreen } from '../../config/restaurant';
+import { RESTAURANT, hasStaffScreen } from '../../config/restaurant';
 import { readTableCookie } from '../../domain/table';
+import { scheduledMenus, type FoodMenus } from '../../domain/menu/menus';
+import { restaurantWeekday } from '../../domain/menu/saturday';
 
 /**
  * Guest-side state: chosen language and the cart.
@@ -66,6 +68,11 @@ interface CustomerState {
   cartTotalCents: number;
   /** The table whose shared cart this is, or null for a cart on this phone only. */
   sharedTable: string | null;
+  /**
+   * The food menus this guest sees: the table's, as the staff set it or the
+   * day's schedule gives it (Winterthur), else everything served today.
+   */
+  foodMenus: FoodMenus;
 }
 
 const Context = createContext<CustomerState | null>(null);
@@ -77,6 +84,7 @@ const SHARED_CART_POLL_MS = 4000;
 
 interface ServerCart {
   allAtOnce: boolean;
+  menus: FoodMenus;
   lines: {
     menuItemId: string;
     name: string;
@@ -139,6 +147,9 @@ export function CustomerProvider({
   const [hydrated, setHydrated] = useState(false);
   const [sharedTable, setSharedTable] = useState<string | null>(null);
   const [allAtOnce, setAllAtOnceState] = useState(false);
+  // From the schedule at once, so the tabs are right before the server answers;
+  // the server's answer (which knows what the staff set) then takes over.
+  const [foodMenus, setFoodMenus] = useState<FoodMenus>('BOTH');
 
   useEffect(() => {
     const storedLocale = read<string>(LOCALE_KEY, DEFAULT_LOCALE);
@@ -146,6 +157,8 @@ export function CustomerProvider({
       setLocaleState(storedLocale);
       document.documentElement.lang = storedLocale;
     }
+    const cardTable = readTableCookie(document.cookie);
+    setFoodMenus(scheduledMenus(cardTable, RESTAURANT.menuSchedule, restaurantWeekday()));
     if (!guestCart) {
       setHydrated(true);
       return;
@@ -191,6 +204,7 @@ export function CustomerProvider({
       }
       if (!response.ok) return;
       const data = (await response.json()) as ServerCart;
+      setFoodMenus(data.menus);
       if (seen === changes.current && inFlight.current === 0) {
         setCart(fromServer(data));
         setAllAtOnceState(data.allAtOnce);
@@ -219,6 +233,7 @@ export function CustomerProvider({
           const data = (await response.json()) as ServerCart;
           setCart(fromServer(data));
           setAllAtOnceState(data.allAtOnce);
+          setFoodMenus(data.menus);
         } else if (!response.ok) await refresh();
       } catch {
         inFlight.current -= 1;
@@ -361,6 +376,7 @@ export function CustomerProvider({
       cartCount: cart.reduce((n, l) => n + l.quantity, 0),
       cartTotalCents: cart.reduce((n, l) => n + l.unitPriceCents * l.quantity, 0),
       sharedTable,
+      foodMenus,
     }),
     [
       locale,
@@ -375,6 +391,7 @@ export function CustomerProvider({
       clearCart,
       quantityOf,
       sharedTable,
+      foodMenus,
     ],
   );
 
