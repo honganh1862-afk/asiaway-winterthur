@@ -161,5 +161,8 @@
   "staff.table.menu.hint": "Only staff can change this. It goes back to the schedule when the table is cleared.",
   "menus.VIETNAMESE": "Vietnamese",
   "menus.THAI": "Thai",
-  "menus.BOTH": "Vietnamese & Thai"
+  "menus.BOTH": "Vietnamese & Thai",
+  "staff.board.clearAll": "Clear all tables (end of day)",
+  "staff.board.clearAll.confirm": "Clear all {count} tables with a list? Do this only when every table has paid.",
+  "staff.board.clearAll.done": "Cleared: {tables}"
 }

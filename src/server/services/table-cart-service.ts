@@ -290,6 +290,31 @@ export async function clearTable(db: Db, tableNumber: string, staffName: string)
   return cleared.length > 0;
 }
 
+/**
+ * End of the day: clears every table at once, exactly as clearing each one
+ * would (who and when are kept, staff menu choices go back to the schedule).
+ * Returns the tables that had an open cart.
+ */
+export async function clearAllTables(db: Db, staffName: string): Promise<string[]> {
+  return db.transaction(async (tx: Db) => {
+    const cleared = await tx
+      .update(tableCarts)
+      .set({ clearedAt: new Date(), clearedBy: staffName })
+      .where(isNull(tableCarts.clearedAt))
+      .returning({ tableId: tableCarts.tableId });
+    await tx
+      .update(restaurantTables)
+      .set({ menuOverride: null })
+      .where(sql`${restaurantTables.menuOverride} is not null`);
+    if (cleared.length === 0) return [];
+    const ids = new Set(cleared.map((c) => c.tableId));
+    return (await tx.select().from(restaurantTables))
+      .filter((t) => ids.has(t.id))
+      .map((t) => t.tableNumber)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  });
+}
+
 export interface TableOverview {
   readonly tableNumber: string;
   readonly area: 'INSIDE' | 'OUTSIDE' | null;

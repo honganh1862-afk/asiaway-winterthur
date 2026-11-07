@@ -74,6 +74,9 @@ screen. Tap your name and type the PIN; the sign-in lasts 12 hours.
   1. Gang is cleared (SOP-01).
 - When the table has paid, tap **Paid — clear table**. The list empties on the
   guests' phones too, ready for the next guests.
+- **End of the day:** once every table has paid, **Clear all tables (end of
+  day)** at the bottom of the board clears every table in one step, as clearing
+  each would, and returns every table's menu to the schedule.
 - **Manage tables** adds a table, sets inside or outside, or removes one (a
   table with dishes on it must be cleared first). A removed table can be
   brought back and its printed card works again.

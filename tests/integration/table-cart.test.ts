@@ -6,6 +6,7 @@ import { menuItems, tableCarts } from '../../src/server/db/schema';
 import { applyShippedMenu, loadShippedMenu } from '../../src/server/menu/sync-menu';
 import { RESTAURANT_PROFILES } from '../../src/config/restaurant';
 import {
+  clearAllTables,
   setTableMenus,
   addMissingTables,
   changeCartLine,
@@ -254,5 +255,21 @@ describe('which menu a table gets', () => {
     await setTableMenus(db, '320', 'BOTH');
     await setTableMenus(db, '320', null);
     expect((await getTableCart(db, '320', 'en', tuesday)).menus).toBe('THAI');
+  });
+});
+
+describe('end of the day', () => {
+  it('clears every table at once, keeps who did it, and resets staff menu choices', async () => {
+    await changeCartLine(db, '220', { menuItemId: springRolls, delta: 1 }, 'guest');
+    await changeCartLine(db, '320', { menuItemId: pho, delta: 2 }, 'guest');
+    await setTableMenus(db, '320', 'BOTH');
+
+    expect(await clearAllTables(db, 'Edmond')).toEqual(expect.arrayContaining(['220', '320']));
+    expect((await listTables(db)).filter((t) => t.cart)).toEqual([]);
+    expect((await getTableCart(db, '320', 'en')).menuOverride).toBeNull();
+    const closed = await db.select().from(tableCarts);
+    expect(closed.filter((c) => c.clearedBy === 'Edmond').length).toBeGreaterThanOrEqual(2);
+
+    expect(await clearAllTables(db, 'Edmond')).toEqual([]);
   });
 });

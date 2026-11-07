@@ -161,5 +161,8 @@
   "staff.table.menu.hint": "Nur das Personal kann das ändern. Beim Leeren des Tisches gilt wieder der Plan.",
   "menus.VIETNAMESE": "Vietnamesisch",
   "menus.THAI": "Thai",
-  "menus.BOTH": "Vietnamesisch & Thai"
+  "menus.BOTH": "Vietnamesisch & Thai",
+  "staff.board.clearAll": "Alle Tische leeren (Tagesende)",
+  "staff.board.clearAll.confirm": "Alle {count} Tische mit einer Liste leeren? Nur, wenn alle Tische bezahlt haben.",
+  "staff.board.clearAll.done": "Geleert: {tables}"
 }
