@@ -74,9 +74,9 @@ screen. Tap your name and type the PIN; the sign-in lasts 12 hours.
   Thai; Sunday Thai only (`menuSchedule` in `src/config/restaurant.ts`). On a
   table's page, **Menu for this table** sets it to Vietnamese, Thai or both for
   those guests; only staff can, and clearing the table returns it to the plan.
-- Take the order into the till as before: nothing here reaches the kitchen.
-  Send the 1. Gang and drinks now and hold the 2. Gang; release it once the
-  1. Gang is cleared (SOP-01).
+- Then enter the confirmed order in the POS, as before: this screen has no link
+  to the kitchen. Starters and drinks go now; release the main course, then
+  the dessert, as each course before it is cleared (SOP-01).
 - When the table has paid, tap **Paid — clear table**. The list empties on the
   guests' phones too, ready for the next guests.
 - **End of the day:** once every table has paid, **Clear all tables (end of
