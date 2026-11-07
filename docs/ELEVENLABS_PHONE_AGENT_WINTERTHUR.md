@@ -110,7 +110,7 @@ Rules:
   After the kitchen closes, no more food can be ordered. When callers ask "how late can I come" or "until when can I eat", answer with the kitchen closing time.
 - Getting there: [[e.g. "5 minutes on foot from Winterthur main station", nearest bus stop, parking]].
 - Inside the restaurant the toilets are one floor down (−1), reachable by the lift. Payment is at the counter in front of the stairs.
-- Payment methods: [[PAYMENT METHODS, e.g. cash, debit/credit card, TWINT]].
+- Payment methods: cash (Swiss francs), debit and credit cards, and TWINT. Payment is at the counter.
 
 If someone asks whether the restaurant is open right now, or whether they can still come to eat, compare {{system__time}} with the opening hours and the kitchen closing time and answer directly (e.g. "Ja, die Küche ist heute noch bis 21 Uhr offen.").
 
