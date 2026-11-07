@@ -14,6 +14,8 @@ import {
   type TableCart,
 } from '../../../../components/staff/useStaff';
 import { formatMoney } from '../../../../lib/format';
+import { RESTAURANT } from '../../../../config/restaurant';
+import type { MessageKey } from '../../../../i18n';
 
 /**
  * One table, for the member of staff at it: what the guests have put in the
@@ -82,6 +84,41 @@ function Table() {
         </Link>
         <h1 className="font-display text-3xl font-bold">{t('staff.table.title', { table: tableNumber })}</h1>
       </div>
+
+      {/* Staff only: which menus this table's guests see, until it is cleared. */}
+      {cart && RESTAURANT.thaiMenu && (
+        <section className="space-y-2">
+          <h2 className="h-label">{t('staff.table.menu')}</h2>
+          <div className="grid grid-cols-2 gap-2">
+            {(['SCHEDULE', 'VIETNAMESE', 'THAI', 'BOTH'] as const).map((value) => {
+              const chosen = value === 'SCHEDULE' ? cart.menuOverride === null : cart.menuOverride === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={chosen}
+                  onClick={async () =>
+                    setCart(
+                      await staffFetch<TableCart>(`${path}/menu?lang=${locale}`, {
+                        method: 'POST',
+                        body: JSON.stringify({ menus: value }),
+                      }),
+                    )
+                  }
+                  className={`min-h-tap rounded-xl border px-3 py-2 text-sm font-semibold ${
+                    value === 'SCHEDULE' ? 'col-span-2' : ''
+                  } ${chosen ? 'border-brand-600 bg-brand-600 text-white' : 'border-ink/15 bg-surface text-ink'}`}
+                >
+                  {value === 'SCHEDULE'
+                    ? t('staff.table.menu.schedule', { menu: t(`menus.${cart.scheduledMenus}` as MessageKey) })
+                    : t(`menus.${value}` as MessageKey)}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-ink-muted">{t('staff.table.menu.hint')}</p>
+        </section>
+      )}
 
       {cart && (
         <div className="flex gap-2" role="group" aria-label={t('cart.serve.title')}>

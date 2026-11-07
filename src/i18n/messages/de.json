@@ -155,5 +155,11 @@
   "course.toSecond": "Später: 2. Gang",
   "course.toFirst": "Früher: 1. Gang",
   "staff.board.second": "2. Gang: {count}",
-  "staff.table.addTo": "Hinzufügen zu"
+  "staff.table.addTo": "Hinzufügen zu",
+  "staff.table.menu": "Menü für diesen Tisch",
+  "staff.table.menu.schedule": "Laut Plan: {menu}",
+  "staff.table.menu.hint": "Nur das Personal kann das ändern. Beim Leeren des Tisches gilt wieder der Plan.",
+  "menus.VIETNAMESE": "Vietnamesisch",
+  "menus.THAI": "Thai",
+  "menus.BOTH": "Vietnamesisch & Thai"
 }

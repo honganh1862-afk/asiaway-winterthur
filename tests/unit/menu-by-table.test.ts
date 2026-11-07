@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categoriesOnTab, foodMenusForTable, menuTabFor } from '../../src/domain/menu/menus';
+import { categoriesOnTab, menusOfTheDay, menuTabFor, scheduledMenus } from '../../src/domain/menu/menus';
 import { menuTabs, openTab, type Category } from '../../src/components/customer/useMenu';
 import { RESTAURANT_PROFILES } from '../../src/config/restaurant';
 
@@ -18,26 +18,39 @@ const winterthurMenu = [
   category('beer', 'DRINK'),
 ];
 
-describe('the food menu a Winterthur table is given', () => {
-  it('reads it from the first digit of the table number', () => {
-    expect(foodMenusForTable('110', true)).toBe('VIETNAMESE');
-    expect(foodMenusForTable('136', true)).toBe('VIETNAMESE');
-    expect(foodMenusForTable('210', true)).toBe('BOTH');
-    expect(foodMenusForTable('233', true)).toBe('BOTH');
-    expect(foodMenusForTable('310', true)).toBe('THAI');
-    expect(foodMenusForTable('333', true)).toBe('THAI');
+const schedule = RESTAURANT_PROFILES.winterthur.menuSchedule;
+const MON = 1, TUE = 2, WED = 3, THU = 4, FRI = 5, SAT = 6, SUN = 7;
+
+describe('the food menu a Winterthur table is given, by weekday', () => {
+  it('serves Tuesday to Thursday: 1xx Vietnamese, 2xx both, 3xx Thai', () => {
+    for (const day of [TUE, WED, THU]) {
+      expect(scheduledMenus('110', schedule, day)).toBe('VIETNAMESE');
+      expect(scheduledMenus('233', schedule, day)).toBe('BOTH');
+      expect(scheduledMenus('310', schedule, day)).toBe('THAI');
+    }
   });
 
-  it('gives both to a guest with no table, or a table numbered otherwise', () => {
-    expect(foodMenusForTable(null, true)).toBe('BOTH');
-    expect(foodMenusForTable('410', true)).toBe('BOTH');
-    expect(foodMenusForTable('A1', true)).toBe('BOTH');
+  it('serves no Thai on Monday, Friday or Saturday', () => {
+    for (const day of [MON, FRI, SAT]) {
+      for (const table of ['110', '210', '333']) expect(scheduledMenus(table, schedule, day)).toBe('VIETNAMESE');
+      expect(menusOfTheDay(schedule, day)).toBe('VIETNAMESE');
+    }
+  });
+
+  it('serves only Thai on Sunday, at every table', () => {
+    for (const table of ['110', '210', '333']) expect(scheduledMenus(table, schedule, SUN)).toBe('THAI');
+    expect(menusOfTheDay(schedule, SUN)).toBe('THAI');
+  });
+
+  it('gives a guest with no table, or at a table the schedule does not cover, what is served that day', () => {
+    expect(scheduledMenus(null, schedule, WED)).toBe('BOTH');
+    expect(scheduledMenus('410', schedule, WED)).toBe('BOTH');
+    expect(scheduledMenus(null, schedule, MON)).toBe('VIETNAMESE');
   });
 
   it('applies in Winterthur only', () => {
-    expect(RESTAURANT_PROFILES.winterthur.menuByTable).toBe(true);
-    expect(RESTAURANT_PROFILES.oerlikon.menuByTable).toBe(false);
-    expect(foodMenusForTable('310', false)).toBe('BOTH');
+    expect(RESTAURANT_PROFILES.oerlikon.menuSchedule).toBeNull();
+    expect(scheduledMenus('310', null, TUE)).toBe('BOTH');
   });
 });
 

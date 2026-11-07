@@ -181,6 +181,8 @@ export const restaurantTables = pgTable('restaurant_tables', {
   qrTokenVersion: integer('qr_token_version').notNull().default(1),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** The menus staff set for this table's guests; null = the day's schedule. */
+  menuOverride: text('menu_override'),
 });
 
 export const tableGroups = pgTable('table_groups', {

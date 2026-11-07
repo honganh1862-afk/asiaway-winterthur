@@ -6,6 +6,7 @@ import { menuItems, tableCarts } from '../../src/server/db/schema';
 import { applyShippedMenu, loadShippedMenu } from '../../src/server/menu/sync-menu';
 import { RESTAURANT_PROFILES } from '../../src/config/restaurant';
 import {
+  setTableMenus,
   addMissingTables,
   changeCartLine,
   setAllAtOnce,
@@ -220,5 +221,38 @@ describe('tables from the restaurant\'s list', () => {
   it('gives Oerlikon the staff screen too, with its own staff', () => {
     expect(RESTAURANT_PROFILES.oerlikon.staff).toEqual(['Belle']);
     expect(RESTAURANT_PROFILES.winterthur.staff).toContain('Edmond');
+  });
+});
+
+describe('which menu a table gets', () => {
+  // 10 November 2026 is a Tuesday, the 15th a Sunday (noon in Zurich).
+  const schedule = RESTAURANT_PROFILES.winterthur.menuSchedule;
+  const tuesday = { now: new Date('2026-11-10T11:00:00Z'), schedule };
+  const sunday = { now: new Date('2026-11-15T11:00:00Z'), schedule };
+
+  it('follows the day\'s schedule', async () => {
+    await createTable(db, { tableNumber: '320' });
+    expect(await getTableCart(db, '320', 'en', tuesday)).toMatchObject({ menus: 'THAI', menuOverride: null });
+    expect((await getTableCart(db, '220', 'en', tuesday)).menus).toBe('BOTH');
+    expect((await getTableCart(db, '220', 'en', sunday)).menus).toBe('THAI');
+  });
+
+  it('lets the staff set a table otherwise, until the table is cleared', async () => {
+    await setTableMenus(db, '320', 'VIETNAMESE');
+    expect(await getTableCart(db, '320', 'en', tuesday)).toMatchObject({
+      menus: 'VIETNAMESE',
+      scheduledMenus: 'THAI',
+      menuOverride: 'VIETNAMESE',
+    });
+
+    await changeCartLine(db, '320', { menuItemId: springRolls, delta: 1 }, 'guest');
+    await clearTable(db, '320', 'Mersi');
+    expect(await getTableCart(db, '320', 'en', tuesday)).toMatchObject({ menus: 'THAI', menuOverride: null });
+  });
+
+  it('goes back to the schedule when the staff say so', async () => {
+    await setTableMenus(db, '320', 'BOTH');
+    await setTableMenus(db, '320', null);
+    expect((await getTableCart(db, '320', 'en', tuesday)).menus).toBe('THAI');
   });
 });

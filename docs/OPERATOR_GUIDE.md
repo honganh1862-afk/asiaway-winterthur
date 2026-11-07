@@ -64,6 +64,11 @@ screen. Tap your name and type the PIN; the sign-in lasts 12 hours.
   guests choose at the top of their cart, and you can change it on the table's
   page. In courses, dishes start in the 1. Gang and move with one tap; drinks
   have no course. The board shows "2nd course: n" or "All at once" per table.
+- **Which menu a table gets** (Winterthur) follows the day: Monday, Friday and
+  Saturday Vietnamese only; Tuesday to Thursday 1xx Vietnamese, 2xx both, 3xx
+  Thai; Sunday Thai only (`menuSchedule` in `src/config/restaurant.ts`). On a
+  table's page, **Menu for this table** sets it to Vietnamese, Thai or both for
+  those guests; only staff can, and clearing the table returns it to the plan.
 - Take the order into the till as before: nothing here reaches the kitchen.
   Send the 1. Gang and drinks now and hold the 2. Gang; release it once the
   1. Gang is cleared (SOP-01).

@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { foodMenusForTable, menuTabFor, type FoodMenus, type MenuTab } from '../../domain/menu/menus';
-import { readTableCookie } from '../../domain/table';
-import { RESTAURANT } from '../../config/restaurant';
+import { menuTabFor, type FoodMenus, type MenuTab } from '../../domain/menu/menus';
+import { useCustomer } from './CustomerProvider';
 import type { Locale } from '../../i18n/locales';
 import type { Translator } from '../../i18n';
 
@@ -88,14 +87,11 @@ function keepMenu(locale: Locale, categories: Category[]): void {
 }
 
 /**
- * The food menus this guest's table is given (1xx Vietnamese, 2xx both, 3xx
- * Thai in Winterthur), read from the table card's cookie. Until the cookie has
- * been read, and for a guest who scanned no card, that is both.
+ * The food menus this guest sees (Winterthur: by table and weekday, or as the
+ * staff set the table), held by CustomerProvider.
  */
 export function useFoodMenus(): FoodMenus {
-  const [table, setTable] = useState<string | null>(null);
-  useEffect(() => setTable(readTableCookie(document.cookie)), []);
-  return foodMenusForTable(table, RESTAURANT.menuByTable);
+  return useCustomer().foodMenus;
 }
 
 /**
