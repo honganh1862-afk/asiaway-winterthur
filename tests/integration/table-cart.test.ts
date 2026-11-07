@@ -221,7 +221,9 @@ describe('tables from the restaurant\'s list', () => {
 
   it('gives Oerlikon the staff screen too, with its own staff', () => {
     expect(RESTAURANT_PROFILES.oerlikon.staff).toEqual(['Belle']);
-    expect(RESTAURANT_PROFILES.winterthur.staff).toContain('Edmond');
+    expect(RESTAURANT_PROFILES.winterthur.staff).toEqual(
+      expect.arrayContaining(['Edmond', 'Belle', 'Hong Anh']),
+    );
   });
 });
 

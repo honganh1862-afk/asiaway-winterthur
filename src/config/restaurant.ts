@@ -90,7 +90,7 @@ export const RESTAURANT_PROFILES: Readonly<Record<RestaurantLocation, Restaurant
     wineAndTea: true,
     // "Asiaway Restaurant Winterthur" on Google Maps.
     reviewUrl: 'https://maps.app.goo.gl/2zNqQCJNHLKMi4WA8',
-    staff: ['Edmond', 'Viet', 'Xuan', 'Tami', 'Yen', 'April', 'Mersi', 'Trung'],
+    staff: ['Edmond', 'Viet', 'Xuan', 'Tami', 'Yen', 'April', 'Mersi', 'Trung', 'Belle', 'Hong Anh'],
   },
 };
 
