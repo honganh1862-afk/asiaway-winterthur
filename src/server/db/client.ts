@@ -59,4 +59,5 @@ export const MIGRATION_FILES = [
   '0013_table_carts.sql',
   '0014_cart_courses.sql',
   '0015_table_menu_override.sql',
+  '0016_confirm_and_requests.sql',
 ] as const;

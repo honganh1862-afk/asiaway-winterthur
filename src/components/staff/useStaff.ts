@@ -68,7 +68,14 @@ export interface TableOverview {
   tableNumber: string;
   area: 'INSIDE' | 'OUTSIDE' | null;
   isActive: boolean;
-  cart: { count: number; totalCents: number; updatedAt: string; secondCourse: number; allAtOnce: boolean } | null;
+  cart: {
+    count: number;
+    totalCents: number;
+    updatedAt: string;
+    allAtOnce: boolean;
+    pending: number;
+    confirmed: boolean;
+  } | null;
 }
 
 export interface TableCart {
@@ -77,6 +84,10 @@ export interface TableCart {
   totalCents: number;
   updatedAt: string | null;
   allAtOnce: boolean;
+  note: string | null;
+  pending: number;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
   menus: 'VIETNAMESE' | 'THAI' | 'BOTH';
   scheduledMenus: 'VIETNAMESE' | 'THAI' | 'BOTH';
   menuOverride: 'VIETNAMESE' | 'THAI' | 'BOTH' | null;
@@ -90,8 +101,10 @@ export interface TableCart {
     quantity: number;
     isAvailable: boolean;
     changedBy: string;
-    course: 1 | 2;
+    course: 1 | 2 | 3;
     kind: 'FOOD' | 'DRINK';
+    confirmedQuantity: number;
+    note: string | null;
   }[];
 }
 

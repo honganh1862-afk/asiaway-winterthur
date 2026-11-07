@@ -2,7 +2,14 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { domainError } from '../../domain/errors';
 import { generateQrToken } from '../../domain/session/qr-token';
 import { isTableNumber } from '../../domain/table';
-import { FOOD_MENUS, scheduledMenus, type FoodMenus, type MenuSchedule } from '../../domain/menu/menus';
+import {
+  FOOD_MENUS,
+  defaultCourse,
+  scheduledMenus,
+  type Course,
+  type FoodMenus,
+  type MenuSchedule,
+} from '../../domain/menu/menus';
 import { restaurantWeekday } from '../../domain/menu/saturday';
 import { RESTAURANT } from '../../config/restaurant';
 import type { Locale } from '../../i18n/locales';
@@ -13,27 +20,27 @@ import { menuCategories, menuItems, restaurantTables, tableCartLines, tableCarts
  * One shared cart per table.
  *
  * Every phone that scans a table's card reads and changes the same list, and
- * the staff see it on their phones: they go to the table, take the order from
- * it, add what a guest orders from the printed card, and clear the table once
- * the guests have paid. Clearing closes the cart (who and when are kept) and
- * the table's next guests start a new one.
+ * the staff see it on their phones. A guest adds a dish with +, chooses its
+ * course in the cart (1 starter, 2 main course, 3 dessert; drinks have none)
+ * and may type a special request for a dish or for the whole table. The staff
+ * come to the table, check the list, change what is needed (and type requests
+ * for guests ordering from the printed card), then confirm it: confirmed is
+ * what goes to the kitchen. Clearing the table after paying closes the cart
+ * (who and when are kept) and the table's next guests start a new one.
  *
- * Changes are made line by line — add one, take one away, set a quantity — and
- * each is a single statement, so two guests tapping at the same moment both
- * count rather than one overwriting the other.
+ * Confirmation is kept per line as a confirmed quantity. What is above it is
+ * new and waits; a guest can add to a line but never take it below what is
+ * confirmed, nor move or re-word a confirmed dish. The staff can change
+ * anything, and confirm again.
  *
- * Each line belongs to a course: the first (1. Gang), entered in the POS at
- * once, or the second (2. Gang), held until the staff release it. A dish
- * starts in the first; the same dish can be in both. Drinks have no course
- * and always count as the first: they are served as soon as they are ordered.
- * A table can also ask for everything at once; its lines keep their courses,
- * so switching back restores the split.
+ * Changes are made line by line, each a single statement, so two guests
+ * tapping at the same moment both count rather than one overwriting the other.
  */
-
-export type Course = 1 | 2;
 
 /** Who changed a line: a guest's phone, or the member of staff by name. */
 export type CartActor = 'guest' | { staff: string };
+
+export const MAX_NOTE = 200;
 
 export interface TableCartLine {
   readonly menuItemId: string;
@@ -43,11 +50,15 @@ export interface TableCartLine {
   readonly volume: string | null;
   readonly unitPriceCents: number;
   readonly quantity: number;
+  /** How many of them the staff have confirmed; the rest wait. */
+  readonly confirmedQuantity: number;
   readonly isAvailable: boolean;
   /** 'guest', or the name of the member of staff who last changed the line. */
   readonly changedBy: string;
   readonly course: Course;
   readonly kind: 'FOOD' | 'DRINK';
+  /** A special request for this dish, or null. */
+  readonly note: string | null;
 }
 
 export interface TableCart {
@@ -57,8 +68,14 @@ export interface TableCart {
   readonly totalCents: number;
   /** When the cart last changed; null for a table with no open cart. */
   readonly updatedAt: string | null;
-  /** Everything served at once: no second course held back. */
+  /** Everything served at once: no course held back. */
   readonly allAtOnce: boolean;
+  /** A special request for the whole table, or null. */
+  readonly note: string | null;
+  /** Items waiting for the staff's confirmation (plus 1 for a new table request). */
+  readonly pending: number;
+  readonly confirmedAt: string | null;
+  readonly confirmedBy: string | null;
   /** The food menus this table's guests see now: staff's choice, else the schedule. */
   readonly menus: FoodMenus;
   /** What the day's schedule gives this table, whatever staff chose. */
@@ -92,6 +109,16 @@ function localised(row: { nameEn: string; nameDe: string; nameVi: string }, loca
   return locale === 'de' ? row.nameDe : locale === 'vi' ? row.nameVi : row.nameEn;
 }
 
+/** A request as typed: trimmed, at most MAX_NOTE characters, or null when blank. */
+export function cleanNote(note: string | null | undefined, max = MAX_NOTE): string | null {
+  const text = (note ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+  return text.length > 0 ? text : null;
+}
+
+function asCourse(value: number): Course {
+  return value === 2 ? 2 : value === 3 ? 3 : 1;
+}
+
 async function activeTable(db: Db, tableNumber: string) {
   if (!isTableNumber(tableNumber)) throw domainError('TABLE_NOT_FOUND', 'No such table');
   const [table] = await db
@@ -110,6 +137,14 @@ async function openCartId(db: Db, tableId: string): Promise<string | null> {
   return cart?.id ?? null;
 }
 
+/** Opens the table's cart if it has none, and returns its id. */
+async function ensureCart(tx: Db, tableId: string): Promise<string> {
+  // The partial unique index allows one open cart per table: a second phone
+  // opening it at the same moment finds the first one's.
+  await tx.insert(tableCarts).values({ tableId }).onConflictDoNothing();
+  return (await openCartId(tx, tableId))!;
+}
+
 export async function getTableCart(
   db: Db,
   tableNumber: string,
@@ -123,7 +158,21 @@ export async function getTableCart(
     .select()
     .from(tableCarts)
     .where(and(eq(tableCarts.tableId, table.id), isNull(tableCarts.clearedAt)));
-  if (!cart) return { tableNumber, lines: [], count: 0, totalCents: 0, updatedAt: null, allAtOnce: false, ...menus };
+  if (!cart) {
+    return {
+      tableNumber,
+      lines: [],
+      count: 0,
+      totalCents: 0,
+      updatedAt: null,
+      allAtOnce: false,
+      note: null,
+      pending: 0,
+      confirmedAt: null,
+      confirmedBy: null,
+      ...menus,
+    };
+  }
 
   const rows = await db
     .select({ line: tableCartLines, item: menuItems, kind: menuCategories.kind })
@@ -143,12 +192,15 @@ export async function getTableCart(
       volume: item.volume,
       unitPriceCents: item.priceCents,
       quantity: line.quantity,
+      confirmedQuantity: Math.min(line.confirmedQuantity, line.quantity),
       isAvailable: item.isAvailable,
       changedBy: line.changedBy,
-      course: (line.course === 2 ? 2 : 1) as Course,
+      course: asCourse(line.course),
       kind,
+      note: line.note,
     }));
 
+  const newRequest = (cart.note ?? null) !== (cart.confirmedNote ?? null) && cart.note !== null;
   return {
     tableNumber,
     lines,
@@ -156,97 +208,189 @@ export async function getTableCart(
     totalCents: lines.reduce((n, l) => n + l.quantity * l.unitPriceCents, 0),
     updatedAt: cart.updatedAt.toISOString(),
     allAtOnce: cart.allAtOnce,
+    note: cart.note,
+    pending: lines.reduce((n, l) => n + l.quantity - l.confirmedQuantity, 0) + (newRequest ? 1 : 0),
+    confirmedAt: cart.confirmedAt?.toISOString() ?? null,
+    confirmedBy: cart.confirmedBy,
     ...menus,
   };
 }
 
 export type CartChange =
+  /** Adds (or takes away) some of a dish; no course = the dish's own default. */
   | { readonly menuItemId: string; readonly delta: number; readonly course?: Course }
   | { readonly menuItemId: string; readonly quantity: number; readonly course?: Course }
-  /** Moves a dish, all of it, from one course to the other. */
-  | { readonly menuItemId: string; readonly from: Course; readonly to: Course };
+  /** Moves a dish, all of it, to another course. */
+  | { readonly menuItemId: string; readonly from: Course; readonly to: Course }
+  /** A special request for one dish in one course; empty removes it. */
+  | { readonly menuItemId: string; readonly course: Course; readonly note: string };
 
 /**
- * Adds to, takes from, sets or moves one line of a table's cart, opening the
- * cart if the table has none. A guest cannot add a dish that is sold out; the
- * staff can, since they are the ones who know.
+ * Adds to, takes from, sets, moves or annotates one line of a table's cart,
+ * opening the cart if the table has none. A guest cannot add a dish that is
+ * sold out (the staff can, since they are the ones who know), nor change what
+ * the staff have already confirmed.
  */
 export async function changeCartLine(db: Db, tableNumber: string, change: CartChange, actor: CartActor) {
   const table = await activeTable(db, tableNumber);
   const by = actorName(actor);
+  const guest = actor === 'guest';
 
   const [item] = await db
-    .select({ id: menuItems.id, isActive: menuItems.isActive, isAvailable: menuItems.isAvailable, kind: menuCategories.kind })
+    .select({
+      id: menuItems.id,
+      isActive: menuItems.isActive,
+      isAvailable: menuItems.isAvailable,
+      kind: menuCategories.kind,
+      slug: menuCategories.slug,
+    })
     .from(menuItems)
     .innerJoin(menuCategories, eq(menuCategories.id, menuItems.categoryId))
     .where(eq(menuItems.id, change.menuItemId));
   if (!item || !item.isActive) throw domainError('ITEMS_UNAVAILABLE', 'No such dish on the menu');
 
   const adding = 'delta' in change ? change.delta > 0 : 'quantity' in change ? change.quantity > 0 : false;
-  if (adding && actor === 'guest' && !item.isAvailable) {
+  if (adding && guest && !item.isAvailable) {
     throw domainError('ITEMS_UNAVAILABLE', 'That dish is sold out', { menuItemId: item.id });
   }
-  // A drink has no course: it is served at once.
-  const courseOf = (c: Course | undefined): Course => (item.kind === 'DRINK' ? 1 : c === 2 ? 2 : 1);
+  // A drink has no course: it is served at once. A dish added with none named
+  // starts in its own (a starter as a starter, a dessert as a dessert).
+  const courseOf = (c: Course | undefined): Course =>
+    item.kind === 'DRINK' ? 1 : c === undefined ? defaultCourse(item) : asCourse(c);
 
   await db.transaction(async (tx: Db) => {
-    // The partial unique index allows one open cart per table: a second phone
-    // opening it at the same moment finds the first one's.
-    await tx.insert(tableCarts).values({ tableId: table.id }).onConflictDoNothing();
-    const cartId = (await openCartId(tx, table.id))!;
+    const cartId = await ensureCart(tx, table.id);
     const lineIn = (course: Course) =>
       and(
         eq(tableCartLines.cartId, cartId),
         eq(tableCartLines.menuItemId, item.id),
         eq(tableCartLines.course, course),
       );
+    const current = async (course: Course) =>
+      (await tx.select().from(tableCartLines).where(lineIn(course)))[0] ?? null;
     const target = [tableCartLines.cartId, tableCartLines.menuItemId, tableCartLines.course];
-    const addTo = async (course: Course, delta: number) => {
-      await tx
-        .insert(tableCartLines)
-        .values({ cartId, menuItemId: item.id, course, quantity: clamp(delta), changedBy: by })
-        .onConflictDoUpdate({
-          target,
-          set: {
-            quantity: sql`least(${MAX_QUANTITY}, greatest(0, ${tableCartLines.quantity} + ${delta}))`,
-            changedBy: by,
-          },
-        });
-    };
+    // A guest never takes a line below what is confirmed; the staff can.
+    const floor = guest ? sql`${tableCartLines.confirmedQuantity}` : sql`0`;
 
     let touched: Course[];
     if ('from' in change) {
       const from = courseOf(change.from);
       const to = courseOf(change.to);
       touched = [from, to];
-      if (from !== to) {
-        // Taken whole out of one course and added to the other, in one step.
-        const moved = await tx.delete(tableCartLines).where(lineIn(from)).returning({ quantity: tableCartLines.quantity });
-        const quantity = moved[0]?.quantity ?? 0;
-        if (quantity > 0) await addTo(to, quantity);
+      const line = await current(from);
+      if (from !== to && line) {
+        if (guest && line.confirmedQuantity > 0) {
+          throw domainError('LINE_CONFIRMED', 'Ask the staff to change a confirmed dish');
+        }
+        // Taken whole out of one course and added to the other, in one step:
+        // its confirmed part and its request go with it.
+        await tx.delete(tableCartLines).where(lineIn(from));
+        await tx
+          .insert(tableCartLines)
+          .values({
+            cartId,
+            menuItemId: item.id,
+            course: to,
+            quantity: line.quantity,
+            confirmedQuantity: line.confirmedQuantity,
+            note: line.note,
+            changedBy: by,
+          })
+          .onConflictDoUpdate({
+            target,
+            set: {
+              quantity: sql`least(${MAX_QUANTITY}, ${tableCartLines.quantity} + ${line.quantity})`,
+              confirmedQuantity: sql`least(${MAX_QUANTITY}, ${tableCartLines.confirmedQuantity} + ${line.confirmedQuantity})`,
+              note: sql`coalesce(${tableCartLines.note}, ${line.note})`,
+              changedBy: by,
+            },
+          });
       }
+    } else if ('note' in change) {
+      const course = courseOf(change.course);
+      touched = [];
+      const line = await current(course);
+      if (!line) throw domainError('VALIDATION_FAILED', 'That dish is not in the cart');
+      if (guest && line.confirmedQuantity > 0) {
+        throw domainError('LINE_CONFIRMED', 'Ask the staff to change a confirmed dish');
+      }
+      await tx.update(tableCartLines).set({ note: cleanNote(change.note), changedBy: by }).where(lineIn(course));
     } else if ('delta' in change) {
       const course = courseOf(change.course);
       touched = [course];
-      await addTo(course, Math.trunc(change.delta));
+      const delta = Math.trunc(change.delta);
+      await tx
+        .insert(tableCartLines)
+        .values({ cartId, menuItemId: item.id, course, quantity: clamp(delta), changedBy: by })
+        .onConflictDoUpdate({
+          target,
+          set: {
+            quantity: sql`least(${MAX_QUANTITY}, greatest(${floor}, ${tableCartLines.quantity} + ${delta}))`,
+            changedBy: by,
+          },
+        });
     } else {
       const course = courseOf(change.course);
       touched = [course];
-      if (change.quantity <= 0) {
-        await tx.delete(tableCartLines).where(lineIn(course));
-      } else {
-        const quantity = clamp(change.quantity);
-        await tx
-          .insert(tableCartLines)
-          .values({ cartId, menuItemId: item.id, course, quantity, changedBy: by })
-          .onConflictDoUpdate({ target, set: { quantity, changedBy: by } });
-      }
+      const quantity = clamp(change.quantity);
+      await tx
+        .insert(tableCartLines)
+        .values({ cartId, menuItemId: item.id, course, quantity, changedBy: by })
+        .onConflictDoUpdate({
+          target,
+          set: { quantity: sql`greatest(${floor}, ${quantity})`, changedBy: by },
+        });
     }
 
+    // The staff taking a line below what they confirmed confirm the lower amount.
     for (const course of touched) {
+      await tx
+        .update(tableCartLines)
+        .set({ confirmedQuantity: sql`least(${tableCartLines.confirmedQuantity}, ${tableCartLines.quantity})` })
+        .where(lineIn(course));
       await tx.delete(tableCartLines).where(and(lineIn(course), eq(tableCartLines.quantity, 0)));
     }
     await tx.update(tableCarts).set({ updatedAt: new Date() }).where(eq(tableCarts.id, cartId));
+  });
+}
+
+/** A special request for the whole table, from a guest or the staff; empty removes it. */
+export async function setTableNote(db: Db, tableNumber: string, note: string): Promise<void> {
+  const table = await activeTable(db, tableNumber);
+  await db.transaction(async (tx: Db) => {
+    const cartId = await ensureCart(tx, table.id);
+    await tx
+      .update(tableCarts)
+      .set({ note: cleanNote(note, MAX_TABLE_NOTE), updatedAt: new Date() })
+      .where(eq(tableCarts.id, cartId));
+  });
+}
+
+export const MAX_TABLE_NOTE = 300;
+
+/**
+ * The staff have checked the list with the guests: everything on it, and the
+ * table's request, is confirmed and goes to the kitchen. Returns how many items
+ * were newly confirmed.
+ */
+export async function confirmOrder(db: Db, tableNumber: string, staffName: string): Promise<number> {
+  const table = await activeTable(db, tableNumber);
+  return db.transaction(async (tx: Db) => {
+    const cartId = await openCartId(tx, table.id);
+    if (!cartId) return 0;
+    const [row] = await tx
+      .select({ n: sql<number>`coalesce(sum(${tableCartLines.quantity} - ${tableCartLines.confirmedQuantity}), 0)::int` })
+      .from(tableCartLines)
+      .where(eq(tableCartLines.cartId, cartId));
+    await tx
+      .update(tableCartLines)
+      .set({ confirmedQuantity: sql`${tableCartLines.quantity}` })
+      .where(eq(tableCartLines.cartId, cartId));
+    await tx
+      .update(tableCarts)
+      .set({ confirmedNote: sql`${tableCarts.note}`, confirmedAt: new Date(), confirmedBy: staffName, updatedAt: new Date() })
+      .where(eq(tableCarts.id, cartId));
+    return Number(row?.n ?? 0);
   });
 }
 
@@ -324,8 +468,11 @@ export interface TableOverview {
     count: number;
     totalCents: number;
     updatedAt: string;
-    secondCourse: number;
     allAtOnce: boolean;
+    /** Items waiting for the staff's confirmation. */
+    pending: number;
+    /** Something has been confirmed (sent to the kitchen) at this table. */
+    confirmed: boolean;
   } | null;
 }
 
@@ -339,13 +486,23 @@ export async function listTables(db: Db): Promise<TableOverview[]> {
       allAtOnce: tableCarts.allAtOnce,
       count: sql<number>`coalesce(sum(${tableCartLines.quantity}), 0)::int`,
       totalCents: sql<number>`coalesce(sum(${tableCartLines.quantity} * ${menuItems.priceCents}), 0)::int`,
-      secondCourse: sql<number>`coalesce(sum(${tableCartLines.quantity}) filter (where ${tableCartLines.course} = 2), 0)::int`,
+      pendingItems: sql<number>`coalesce(sum(${tableCartLines.quantity} - ${tableCartLines.confirmedQuantity}), 0)::int`,
+      note: tableCarts.note,
+      confirmedNote: tableCarts.confirmedNote,
+      confirmedAt: tableCarts.confirmedAt,
     })
     .from(tableCarts)
     .leftJoin(tableCartLines, eq(tableCartLines.cartId, tableCarts.id))
     .leftJoin(menuItems, eq(menuItems.id, tableCartLines.menuItemId))
     .where(isNull(tableCarts.clearedAt))
-    .groupBy(tableCarts.tableId, tableCarts.updatedAt, tableCarts.allAtOnce);
+    .groupBy(
+      tableCarts.tableId,
+      tableCarts.updatedAt,
+      tableCarts.allAtOnce,
+      tableCarts.note,
+      tableCarts.confirmedNote,
+      tableCarts.confirmedAt,
+    );
   const byTable = new Map(carts.map((c) => [c.tableId, c]));
 
   return tables
@@ -362,8 +519,11 @@ export async function listTables(db: Db): Promise<TableOverview[]> {
                 count: Number(cart.count),
                 totalCents: Number(cart.totalCents),
                 updatedAt: cart.updatedAt.toISOString(),
-                secondCourse: Number(cart.secondCourse),
                 allAtOnce: cart.allAtOnce,
+                pending:
+                  Number(cart.pendingItems) +
+                  (cart.note !== null && cart.note !== cart.confirmedNote ? 1 : 0),
+                confirmed: cart.confirmedAt !== null,
               }
             : null,
       };

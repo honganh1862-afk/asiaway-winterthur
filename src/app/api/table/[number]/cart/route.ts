@@ -7,7 +7,7 @@ import {
   invalidBody,
   notServedHere,
 } from '../../../../../server/http/table-cart-api';
-import { changeCartLine, getTableCart, setAllAtOnce } from '../../../../../server/services/table-cart-service';
+import { changeCartLine, getTableCart, setAllAtOnce, setTableNote } from '../../../../../server/services/table-cart-service';
 import { parseLocale } from '../../../../../i18n/locales';
 
 export const runtime = 'nodejs';
@@ -39,6 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
     if (!body.success) return invalidBody(body.error);
     const database = await db();
     if ('allAtOnce' in body.data) await setAllAtOnce(database, number, body.data.allAtOnce);
+    else if ('tableNote' in body.data) await setTableNote(database, number, body.data.tableNote);
     else await changeCartLine(database, number, body.data, 'guest');
     const locale = parseLocale(new URL(request.url).searchParams.get('lang'));
     return NextResponse.json(await getTableCart(database, number, locale), { headers: NO_STORE });

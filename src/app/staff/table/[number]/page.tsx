@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCustomer } from '../../../../components/customer/CustomerProvider';
 import { useMenu, type MenuItem } from '../../../../components/customer/useMenu';
 import { SignIn } from '../../../../components/staff/SignIn';
@@ -40,12 +40,15 @@ export default function StaffTablePage() {
   );
 }
 
-type Course = 1 | 2;
+type Course = 1 | 2 | 3;
+const COURSES: readonly Course[] = [1, 2, 3];
 type Change =
   | { menuItemId: string; delta: number; course?: Course }
   | { menuItemId: string; quantity: number; course?: Course }
   | { menuItemId: string; from: Course; to: Course }
-  | { allAtOnce: boolean };
+  | { menuItemId: string; course: Course; note: string }
+  | { allAtOnce: boolean }
+  | { tableNote: string };
 
 function Table() {
   const { t, locale } = useCustomer();
@@ -170,6 +173,13 @@ function Table() {
                             <span className="ml-1 font-semibold text-danger-500">· {t('staff.table.soldOut')}</span>
                           )}
                         </p>
+                        {line.quantity > line.confirmedQuantity ? (
+                          <p className="mt-0.5 inline-block rounded bg-brand-600 px-1.5 text-xs font-bold text-white">
+                            {t('staff.table.new', { count: line.quantity - line.confirmedQuantity })}
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-xs font-semibold text-ok-500">✓ {t('staff.board.confirmed')}</p>
+                        )}
                       </div>
                       <span className="font-semibold">{formatMoney(line.unitPriceCents * line.quantity)}</span>
                     </div>
@@ -191,17 +201,6 @@ function Table() {
                       >
                         +
                       </button>
-                      {!cart.allAtOnce && line.kind !== 'DRINK' && (
-                        <button
-                          type="button"
-                          className="min-h-tap rounded-xl border border-ink/15 px-3 text-sm font-semibold text-brand-700"
-                          onClick={() =>
-                            change({ menuItemId: line.menuItemId, from: line.course, to: line.course === 2 ? 1 : 2 })
-                          }
-                        >
-                          {line.course === 2 ? t('course.toFirst') : t('course.toSecond')}
-                        </button>
-                      )}
                       <button
                         type="button"
                         className="ml-auto min-h-tap px-2 text-sm text-danger-500"
@@ -209,6 +208,34 @@ function Table() {
                       >
                         {t('cart.remove')}
                       </button>
+                    </div>
+                    {!cart.allAtOnce && line.kind !== 'DRINK' && (
+                      <div className="mt-2 flex gap-2">
+                        {COURSES.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            aria-pressed={line.course === c}
+                            onClick={() =>
+                              line.course !== c && change({ menuItemId: line.menuItemId, from: line.course, to: c })
+                            }
+                            className={`min-h-tap flex-1 rounded-xl border px-2 text-xs font-semibold ${
+                              line.course === c
+                                ? 'border-brand-600 bg-brand-600 text-white'
+                                : 'border-ink/15 bg-surface text-ink'
+                            }`}
+                          >
+                            {c} · {t(`course.${c}` as MessageKey)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2">
+                      <StaffNote
+                        value={line.note ?? ''}
+                        placeholder={t('cart.note.placeholder')}
+                        onSave={(note) => change({ menuItemId: line.menuItemId, course: line.course, note })}
+                      />
                     </div>
                   </li>
                 ))}
@@ -221,6 +248,38 @@ function Table() {
           </div>
         </>
       )}
+
+      {cart && (
+        <label className="block space-y-2">
+          <span className="h-label">{t('cart.note.table')}</span>
+          <StaffNote
+            value={cart.note ?? ''}
+            placeholder={t('cart.note.tablePlaceholder')}
+            onSave={(note) => change({ tableNote: note })}
+            multiline
+          />
+        </label>
+      )}
+
+      {/* Checked with the guests: it goes to the kitchen. */}
+      {cart &&
+        cart.lines.length > 0 &&
+        (cart.pending > 0 ? (
+          <button
+            type="button"
+            // Green, as "confirmed" is everywhere: never mistaken for the red "Paid – clear table".
+            className="min-h-tap w-full rounded-xl bg-ok-500 px-4 py-4 text-base font-semibold text-white"
+            onClick={async () =>
+              setCart(await staffFetch<TableCart>(`${path}/confirm?lang=${locale}`, { method: 'POST' }))
+            }
+          >
+            {t('staff.table.confirm', { count: cart.pending })}
+          </button>
+        ) : (
+          <p className="rounded-xl bg-ok-50 p-3 text-center text-sm font-semibold text-ok-500">
+            ✓ {t('staff.table.allConfirmed', { by: cart.confirmedBy ? ` · ${cart.confirmedBy}` : '' })}
+          </p>
+        ))}
 
       <AddDish
         courses={!(cart?.allAtOnce ?? false)}
@@ -244,21 +303,52 @@ function Table() {
   );
 }
 
-/** In courses: 1. Gang, 2. Gang, drinks. All at once: food, drinks. */
+/** In courses: starter, main course, dessert, drinks. All at once: food, drinks. */
 function groupsOf(cart: TableCart, t: ReturnType<typeof useCustomer>['t']) {
   const food = cart.lines.filter((l) => l.kind !== 'DRINK');
   const drinks = cart.lines.filter((l) => l.kind === 'DRINK');
   const groups = cart.allAtOnce
-    ? [
-        { key: 'food', title: `${t('course.food')} · ${t('cart.serve.allAtOnce')}`, lines: food },
-        { key: 'drinks', title: t('course.drinks'), lines: drinks },
-      ]
-    : [
-        { key: 'c1', title: t('course.1'), lines: food.filter((l) => l.course === 1) },
-        { key: 'c2', title: t('course.2'), lines: food.filter((l) => l.course === 2) },
-        { key: 'drinks', title: t('course.drinks'), lines: drinks },
-      ];
-  return groups.filter((g) => g.lines.length > 0);
+    ? [{ key: 'food', title: `${t('course.food')} · ${t('cart.serve.allAtOnce')}`, lines: food }]
+    : COURSES.map((c) => ({
+        key: `c${c}`,
+        title: `${c} · ${t(`course.${c}` as MessageKey)}`,
+        lines: food.filter((l) => l.course === c),
+      }));
+  return [...groups, { key: 'drinks', title: t('course.drinks'), lines: drinks }].filter((g) => g.lines.length > 0);
+}
+
+/** A request typed by the staff, saved when they leave the field. */
+function StaffNote({
+  value,
+  placeholder,
+  onSave,
+  multiline = false,
+}: {
+  value: string;
+  placeholder: string;
+  onSave: (note: string) => void;
+  multiline?: boolean;
+}) {
+  const [text, setText] = useState(value);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing) setText(value);
+  }, [value, editing]);
+  const props = {
+    value: text,
+    placeholder,
+    maxLength: multiline ? 300 : 200,
+    onFocus: () => setEditing(true),
+    onChange: (e: { target: { value: string } }) => setText(e.target.value),
+    onBlur: () => {
+      setEditing(false);
+      if (text.trim() !== value.trim()) onSave(text);
+    },
+    className: `w-full rounded-xl border px-3 py-2 text-sm ${
+      value ? 'border-brand-600 bg-brand-50 font-semibold' : 'border-ink/20 bg-surface'
+    }`,
+  };
+  return multiline ? <textarea rows={2} {...props} /> : <input type="text" {...props} />;
 }
 
 function normalise(text: string): string {
@@ -274,10 +364,11 @@ function AddDish({
   onAdd,
 }: {
   courses: boolean;
-  onAdd: (menuItemId: string, course: Course) => Promise<void>;
+  onAdd: (menuItemId: string, course: Course | undefined) => Promise<void>;
 }) {
   const { t, locale } = useCustomer();
-  const [course, setCourse] = useState<Course>(1);
+  // Undefined: the dish's own course (a starter as a starter, a dessert as a dessert).
+  const [course, setCourse] = useState<Course | undefined>(undefined);
   const { categories } = useMenu(locale);
   const [query, setQuery] = useState('');
   const [added, setAdded] = useState<string | null>(null);
@@ -302,17 +393,17 @@ function AddDish({
       {courses && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-ink-muted">{t('staff.table.addTo')}</span>
-          {([1, 2] as const).map((value) => (
+          {([undefined, 1, 2, 3] as const).map((value) => (
             <button
-              key={value}
+              key={String(value)}
               type="button"
               aria-pressed={course === value}
               onClick={() => setCourse(value)}
-              className={`min-h-tap flex-1 rounded-xl border px-3 font-semibold ${
+              className={`min-h-tap flex-1 rounded-xl border px-2 text-xs font-semibold ${
                 course === value ? 'border-brand-600 bg-brand-600 text-white' : 'border-ink/15 bg-surface text-ink'
               }`}
             >
-              {t(value === 1 ? 'course.1' : 'course.2')}
+              {value === undefined ? t('staff.table.addAuto') : `${value} · ${t(`course.${value}` as MessageKey)}`}
             </button>
           ))}
         </div>
@@ -333,7 +424,7 @@ function AddDish({
                 type="button"
                 className="flex w-full items-center gap-3 p-3 text-left"
                 onClick={async () => {
-                  await onAdd(item.id, courses ? course : 1);
+                  await onAdd(item.id, courses ? course : undefined);
                   setAdded(item.id);
                   window.setTimeout(() => setAdded(null), 1200);
                 }}

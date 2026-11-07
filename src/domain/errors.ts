@@ -32,6 +32,8 @@ export type DomainErrorCode =
   | 'TABLE_EXISTS'
   /** A table with dishes on it cannot be taken out of service. */
   | 'TABLE_IN_USE'
+  /** A guest tried to change a dish the staff have already confirmed. */
+  | 'LINE_CONFIRMED'
   /** Too many wrong PINs from one place; try again later. */
   | 'RATE_LIMITED'
   | 'UNAUTHENTICATED';

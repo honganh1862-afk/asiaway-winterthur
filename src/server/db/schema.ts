@@ -421,6 +421,12 @@ export const tableCarts = pgTable('table_carts', {
   clearedBy: text('cleared_by'),
   /** The table wants everything served at once, no second course held back. */
   allAtOnce: boolean('all_at_once').notNull().default(false),
+  /** A special request for the whole table, from a guest or the staff. */
+  note: text('note'),
+  /** The table's request as the staff last confirmed it. */
+  confirmedNote: text('confirmed_note'),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  confirmedBy: text('confirmed_by'),
 });
 
 export const tableCartLines = pgTable(
@@ -432,9 +438,13 @@ export const tableCartLines = pgTable(
     menuItemId: uuid('menu_item_id')
       .notNull()
       .references(() => menuItems.id),
-    /** 1 = first course (1. Gang), 2 = second (2. Gang); drinks are always 1. */
+    /** 1 = starter, 2 = main course, 3 = dessert; drinks are always 1. */
     course: smallint('course').notNull().default(1),
     quantity: integer('quantity').notNull(),
+    /** How much of the line the staff have confirmed; the rest waits. */
+    confirmedQuantity: integer('confirmed_quantity').notNull().default(0),
+    /** A special request for this dish ("no peanuts"). */
+    note: text('note'),
     changedBy: text('changed_by').notNull(),
     addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
   },
