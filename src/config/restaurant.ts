@@ -59,6 +59,11 @@ export interface RestaurantProfile {
    * repository is public): it is the STAFF_PIN setting of the deployment.
    */
   readonly staff: readonly string[];
+  /**
+   * The guests' toilets, told on every guest page: the floor and the door
+   * code. Shown to every guest anyway, so it is not a secret. Null: no notice.
+   */
+  readonly toilet: { readonly floor: string; readonly code: string } | null;
 }
 
 export const RESTAURANT_PROFILES: Readonly<Record<RestaurantLocation, RestaurantProfile>> = {
@@ -73,6 +78,7 @@ export const RESTAURANT_PROFILES: Readonly<Record<RestaurantLocation, Restaurant
     // "Asiaway" in Zürich-Oerlikon on Google Maps.
     reviewUrl: 'https://maps.app.goo.gl/nFY8toA4d164p12q7',
     staff: ['Belle'],
+    toilet: null,
   },
   winterthur: {
     saturdayMenu: false,
@@ -91,6 +97,8 @@ export const RESTAURANT_PROFILES: Readonly<Record<RestaurantLocation, Restaurant
     // "Asiaway Restaurant Winterthur" on Google Maps.
     reviewUrl: 'https://maps.app.goo.gl/2zNqQCJNHLKMi4WA8',
     staff: ['Edmond', 'Viet', 'Xuan', 'Tami', 'Yen', 'April', 'Mersi', 'Trung', 'Belle', 'Hong Anh'],
+    // Only by the lift, down to -1.
+    toilet: { floor: '−1', code: 'E2020' },
   },
 };
 

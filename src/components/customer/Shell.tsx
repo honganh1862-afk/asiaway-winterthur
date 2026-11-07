@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useCustomer } from './CustomerProvider';
 import { readTableCookie } from '../../domain/table';
+import { RESTAURANT } from '../../config/restaurant';
 import { LOCALE_LABELS, LOCALES, type Locale } from '../../i18n/locales';
 import { formatMoney } from '../../lib/format';
 
@@ -84,6 +85,19 @@ export function Shell({ children }: { children: ReactNode }) {
           </select>
         </div>
       </header>
+
+      {/* On every guest page: where the toilets are and their door code. */}
+      {RESTAURANT.toilet && (
+        <p
+          role="note"
+          className="shrink-0 border-b border-ink/10 bg-brand-50 px-4 py-1.5 text-center text-xs text-ink"
+        >
+          {/* The code in bold: the words around it come from the translation. */}
+          {t('toilet.notice', RESTAURANT.toilet)
+            .split(RESTAURANT.toilet.code)
+            .flatMap((part, i) => (i === 0 ? [part] : [<b key={i} className="font-bold tracking-wide">{RESTAURANT.toilet!.code}</b>, part]))}
+        </p>
+      )}
 
       {immersive ? (
         <>
